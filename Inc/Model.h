@@ -26,6 +26,8 @@
 #include <string>
 #include <vector>
 
+#include <malloc.h>
+
 #include <wrl\client.h>
 
 
@@ -45,6 +47,32 @@ namespace DirectX
         ModelLoader_PremultipledAlpha   = 0x2,
         ModelLoader_MaterialColorsSRGB  = 0x4,
         ModelLoader_AllowLargeModels    = 0x8,
+    };
+
+    //----------------------------------------------------------------------------------
+    // Frame hierarchy for rigid body and skeletal animation
+    struct ModelBone
+    {
+        ModelBone() noexcept :
+            parentIndex(c_Invalid),
+            childIndex(c_Invalid),
+            siblingIndex(c_Invalid),
+            animIndex(c_Invalid)
+        {}
+
+        uint32_t            parentIndex;
+        uint32_t            childIndex;
+        uint32_t            siblingIndex;
+        uint32_t            animIndex;
+        std::wstring        name;
+
+        using Collection = std::vector<ModelBone>;
+
+        static const uint32_t c_Invalid = uint32_t(-1);
+
+        struct aligned_deleter { void operator()(void* p) noexcept { _aligned_free(p); } };
+
+        using TransformArray = std::unique_ptr<XMMATRIX[], aligned_deleter>;
     };
 
     //----------------------------------------------------------------------------------
@@ -118,6 +146,8 @@ namespace DirectX
         BoundingSphere              boundingSphere;
         BoundingBox                 boundingBox;
         ModelMeshPart::Collection   meshParts;
+        uint32_t                    boneIndex;
+        std::vector<uint32_t>       boneInfluences;
         std::wstring                name;
         bool                        ccw;
         bool                        pmalpha;
@@ -131,6 +161,13 @@ namespace DirectX
         void XM_CALLCONV Draw(
             _In_ ID3D11DeviceContext* deviceContext,
             FXMMATRIX world, CXMMATRIX view, CXMMATRIX projection,
+            bool alpha = false,
+            _In_opt_ std::function<void __cdecl()> setCustomState = nullptr) const;
+
+        void XM_CALLCONV Draw(
+            _In_ ID3D11DeviceContext* deviceContext,
+            size_t nbones, _In_reads_(nbones) const XMMATRIX* boneTransforms,
+            CXMMATRIX view, CXMMATRIX projection,
             bool alpha = false,
             _In_opt_ std::function<void __cdecl()> setCustomState = nullptr) const;
     };
@@ -151,8 +188,10 @@ namespace DirectX
 
         virtual ~Model();
 
-        ModelMesh::Collection   meshes;
-        std::wstring            name;
+        ModelMesh::Collection       meshes;
+        ModelBone::Collection       bones;
+        ModelBone::TransformArray   boneTransforms;
+        std::wstring                name;
 
         // Draw all the meshes in the model
         void XM_CALLCONV Draw(
@@ -161,6 +200,13 @@ namespace DirectX
             FXMMATRIX world, CXMMATRIX view, CXMMATRIX projection,
             bool wireframe = false,
             _In_opt_ std::function<void __cdecl()> setCustomState = nullptr) const;
+
+        void XM_CALLCONV Draw(
+            _In_ ID3D11DeviceContext* deviceContext,
+            const CommonStates& states,
+            CXMMATRIX view, CXMMATRIX projection,
+            bool wireframe = false,
+           _In_opt_ std::function<void __cdecl()> setCustomState = nullptr) const;
 
         // Notify model that effects, parts list, or mesh list has changed
         void __cdecl Modified() noexcept { mEffectCache.clear(); }
@@ -203,6 +249,11 @@ namespace DirectX
             _In_z_ const wchar_t* szFileName,
             _In_opt_ std::shared_ptr<IEffect> ieffect = nullptr,
             ModelLoaderFlags flags = ModelLoader_Clockwise);
+
+        // Frame hierarchy model bone computation functions (if present)
+        void CopyAbsoluteBoneTransformsTo(size_t nbones, _Out_writes_(nbones) XMMATRIX* transform);
+        void CopyBoneTransformsFrom(size_t nbones, _In_reads_(nbones) const XMMATRIX* transform);
+        void CopyBoneTransformsTo(size_t nbones, _Out_writes_(nbones) XMMATRIX* transform);
 
     private:
         std::set<IEffect*>  mEffectCache;

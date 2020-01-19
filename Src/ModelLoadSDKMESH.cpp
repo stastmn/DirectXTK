@@ -437,10 +437,15 @@ std::unique_ptr<Model> DirectX::Model::CreateFromSDKMESH(
         throw std::exception("End of file");
     auto subsetArray = reinterpret_cast<const DXUT::SDKMESH_SUBSET*>(meshData + header->SubsetDataOffset);
 
-    if (dataSize < header->FrameDataOffset
-        || (dataSize < (header->FrameDataOffset + uint64_t(header->NumFrames) * sizeof(DXUT::SDKMESH_FRAME))))
-        throw std::exception("End of file");
-    // TODO - auto frameArray = reinterpret_cast<const DXUT::SDKMESH_FRAME*>( meshData + header->FrameDataOffset );
+    const DXUT::SDKMESH_FRAME* frameArray = nullptr;
+    if (header->NumFrames > 0)
+    {
+        if (dataSize < header->FrameDataOffset
+            || (dataSize < (header->FrameDataOffset + uint64_t(header->NumFrames) * sizeof(DXUT::SDKMESH_FRAME))))
+            throw std::exception("End of file");
+
+        frameArray = reinterpret_cast<const DXUT::SDKMESH_FRAME*>(meshData + header->FrameDataOffset);
+    }
 
     if (dataSize < header->MaterialDataOffset
         || (dataSize < (header->MaterialDataOffset + uint64_t(header->NumMaterials) * sizeof(DXUT::SDKMESH_MATERIAL))))
@@ -598,13 +603,14 @@ std::unique_ptr<Model> DirectX::Model::CreateFromSDKMESH(
 
         auto subsets = reinterpret_cast<const UINT*>(meshData + mh.SubsetOffset);
 
+        const UINT* influences = nullptr;
         if (mh.NumFrameInfluences > 0)
         {
             if (dataSize < mh.FrameInfluenceOffset
                 || (dataSize < mh.FrameInfluenceOffset + uint64_t(mh.NumFrameInfluences) * sizeof(UINT)))
                 throw std::exception("End of file");
 
-            // TODO - auto influences = reinterpret_cast<const UINT*>( meshData + mh.FrameInfluenceOffset );
+            influences = reinterpret_cast<const UINT*>( meshData + mh.FrameInfluenceOffset );
         }
 
         auto mesh = std::make_shared<ModelMesh>();
@@ -618,6 +624,8 @@ std::unique_ptr<Model> DirectX::Model::CreateFromSDKMESH(
         mesh->boundingBox.Center = mh.BoundingBoxCenter;
         mesh->boundingBox.Extents = mh.BoundingBoxExtents;
         BoundingSphere::CreateFromBoundingBox(mesh->boundingSphere, mesh->boundingBox);
+
+        // TODO - influences go into boneInfluences
 
         // Create subsets
         mesh->meshParts.reserve(mh.NumSubsets);
@@ -705,6 +713,11 @@ std::unique_ptr<Model> DirectX::Model::CreateFromSDKMESH(
         }
 
         model->meshes.emplace_back(mesh);
+    }
+
+    if (frameArray)
+    {
+        // TODO - frameArray go into model bones
     }
 
     return model;
